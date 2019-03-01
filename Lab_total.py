@@ -3,7 +3,7 @@
 ##################################################
 # GNU Radio Python Flow Graph
 # Title: Lab Total
-# Generated: Fri Mar  1 10:54:41 2019
+# Generated: Fri Mar  1 12:04:43 2019
 ##################################################
 
 if __name__ == '__main__':
@@ -21,10 +21,13 @@ import sys
 sys.path.append(os.environ.get('GRC_HIER_PATH', os.path.expanduser('~/.grc_gnuradio')))
 
 from PyQt4 import Qt
-from b_Canal_simple_cc import b_Canal_simple_cc  # grc-generated hier_block
-from b_quantizer_fb import b_quantizer_fb  # grc-generated hier_block
-from gnuradio import audio
+from b_Eye_Diagram_c import b_Eye_Diagram_c  # grc-generated hier_block
+from b_RRaised_cosine_cc import b_RRaised_cosine_cc  # grc-generated hier_block
+from b_binary_bipolar_source_f import b_binary_bipolar_source_f  # grc-generated hier_block
+from b_sampler_cc import b_sampler_cc  # grc-generated hier_block
+from gnuradio import analog
 from gnuradio import blocks
+from gnuradio import channels
 from gnuradio import digital
 from gnuradio import eng_notation
 from gnuradio import gr
@@ -33,11 +36,14 @@ from gnuradio.eng_option import eng_option
 from gnuradio.filter import firdes
 from gnuradio.qtgui import Range, RangeWidget
 from optparse import OptionParser
+from scipy import fftpack
 import cmath
 import math
 import numpy
 import random
 import sip
+import threading
+import time
 from gnuradio import qtgui
 
 
@@ -71,39 +77,43 @@ class Lab_total(gr.top_block, Qt.QWidget):
         ##################################################
         # Variables
         ##################################################
-        self.Constelacion = Constelacion = digital.constellation_qpsk().points()
+        self.Constelacion = Constelacion = [1.+0.j,    -1.+0.j ]
         self.samp_rate_audio = samp_rate_audio = 11000
-        self.NbpS = NbpS = 8
+        self.Nbps = Nbps = 8
         self.M = M = len(Constelacion)
-        self.Rb = Rb = NbpS*samp_rate_audio
+        self.Sps = Sps = 8
+        self.Rb = Rb = Nbps*samp_rate_audio
         self.Bps = Bps = int(math.log(M,2))
-        self.Sps = Sps = 2
+        self.rolloff = rolloff = 0.9
+        self.ntaps = ntaps = Sps*16
+        self.nfilts = nfilts = 32
         self.Rs = Rs = Rb/Bps
-        self.samp_rate_usrp_tx = samp_rate_usrp_tx = 400e6
-        self.samp_rate_usrp_rx = samp_rate_usrp_rx = 100e6
-        self.samp_rate_d = samp_rate_d = Rs*Sps
-        self.Ki_d = Ki_d = samp_rate_usrp_tx/samp_rate_d
-        self.Kd_d = Kd_d = samp_rate_usrp_rx/samp_rate_d
-        self.m1 = m1 = math.floor(math.log(Kd_d,2))
-        self.m = m = math.floor(math.log(Ki_d,2))
-        self.Ki = Ki = math.pow(2,m)
-        self.Kd = Kd = math.pow(2,m1)
-        self.samp_rate_tx = samp_rate_tx = int(samp_rate_usrp_tx/Ki)
-        self.samp_rate = samp_rate = int(samp_rate_usrp_rx/Kd)
+        self.tap4 = tap4 = 1
+        self.tap3 = tap3 = 1
+        self.tap2 = tap2 = 1
+        self.tap1 = tap1 = 0.25
+        self.samp_rate = samp_rate = Rs*Sps
         self.run_stop = run_stop = True
+        self.rrc_taps = rrc_taps = firdes.root_raised_cosine(nfilts, nfilts, 1.0/float(Sps), rolloff, ntaps*nfilts)
+        self.jitter_v = jitter_v = 1.
+        self.W = W = Rs/2
         self.Vp = Vp = 1.
-        self.Tmax_scope = Tmax_scope = 16./Rs
-        self.SymbTune = SymbTune = 0
-        self.Path_Loss_dB = Path_Loss_dB = 0.
-        self.NodB = NodB = -60.
-        self.NnivelesQ = NnivelesQ = math.pow(2,NbpS)
+        self.Tmax_scope = Tmax_scope = 64./Rs
+        self.TimingDelay = TimingDelay = 0
+        self.SymbTune = SymbTune = 2
+        self.NodB = NodB = -10
+        self.NnivelesQ = NnivelesQ = math.pow(2,Nbps)
+        self.NbpS = NbpS = 8
 
         self.MiconstellationObject = MiconstellationObject = digital.constellation_calcdist((Constelacion), (), 4, 1).base()
 
+        self.Jitter = Jitter = 0.00001
         self.Fc = Fc = 80e6
-        self.F_offset = F_offset = 0
-        self.Ch_Fluct_percent = Ch_Fluct_percent = 10.
-        self.Ajuste_phi = Ajuste_phi = 0.
+        self.Ch_taps = Ch_taps = 1.
+        self.Ch_Frec_offset = Ch_Frec_offset = 0
+        self.Ch_Delay = Ch_Delay = 0
+        self.Amp_constel1 = Amp_constel1 = 0.16
+        self.Am = Am = .8
 
         ##################################################
         # Blocks
@@ -113,68 +123,131 @@ class Lab_total(gr.top_block, Qt.QWidget):
         self.controls_layout_0 = Qt.QBoxLayout(Qt.QBoxLayout.TopToBottom, self.controls_widget_0)
         self.controls_grid_layout_0 = Qt.QGridLayout()
         self.controls_layout_0.addLayout(self.controls_grid_layout_0)
-        self.controls.addTab(self.controls_widget_0, 'Manipulacion parametros del Canal')
+        self.controls.addTab(self.controls_widget_0, 'Canal')
         self.controls_widget_1 = Qt.QWidget()
         self.controls_layout_1 = Qt.QBoxLayout(Qt.QBoxLayout.TopToBottom, self.controls_widget_1)
         self.controls_grid_layout_1 = Qt.QGridLayout()
         self.controls_layout_1.addLayout(self.controls_grid_layout_1)
-        self.controls.addTab(self.controls_widget_1, 'Sintonizar parametros de otros bloques')
-        self.top_grid_layout.addWidget(self.controls, 0, 1, 1, 2)
-        for r in range(0, 1):
+        self.controls.addTab(self.controls_widget_1, 'Tunning')
+        self.top_grid_layout.addWidget(self.controls, 1, 0, 1, 1)
+        for r in range(1, 2):
             self.top_grid_layout.setRowStretch(r, 1)
-        for c in range(1, 3):
+        for c in range(0, 1):
             self.top_grid_layout.setColumnStretch(c, 1)
+        self.probe1 = blocks.probe_signal_f()
         self.canal = Qt.QTabWidget()
         self.canal_widget_0 = Qt.QWidget()
         self.canal_layout_0 = Qt.QBoxLayout(Qt.QBoxLayout.TopToBottom, self.canal_widget_0)
         self.canal_grid_layout_0 = Qt.QGridLayout()
         self.canal_layout_0.addLayout(self.canal_grid_layout_0)
-        self.canal.addTab(self.canal_widget_0, 'Constelaciones')
+        self.canal.addTab(self.canal_widget_0, 'taps del canal')
         self.canal_widget_1 = Qt.QWidget()
         self.canal_layout_1 = Qt.QBoxLayout(Qt.QBoxLayout.TopToBottom, self.canal_widget_1)
         self.canal_grid_layout_1 = Qt.QGridLayout()
         self.canal_layout_1.addLayout(self.canal_grid_layout_1)
-        self.canal.addTab(self.canal_widget_1, 'Tiempo')
-        self.top_grid_layout.addWidget(self.canal, 1, 1, 3, 1)
-        for r in range(1, 4):
+        self.canal.addTab(self.canal_widget_1, 'otros parametros del canal')
+        self.controls_grid_layout_0.addWidget(self.canal, 0, 0, 1, 1)
+        for r in range(0, 1):
+            self.controls_grid_layout_0.setRowStretch(r, 1)
+        for c in range(0, 1):
+            self.controls_grid_layout_0.setColumnStretch(c, 1)
+
+        def _jitter_v_probe():
+            while True:
+                val = self.probe1.level()
+                try:
+                    self.set_jitter_v(val)
+                except AttributeError:
+                    pass
+                time.sleep(1.0 / (100))
+        _jitter_v_thread = threading.Thread(target=_jitter_v_probe)
+        _jitter_v_thread.daemon = True
+        _jitter_v_thread.start()
+
+        self.instrumentos = Qt.QTabWidget()
+        self.instrumentos_widget_0 = Qt.QWidget()
+        self.instrumentos_layout_0 = Qt.QBoxLayout(Qt.QBoxLayout.TopToBottom, self.instrumentos_widget_0)
+        self.instrumentos_grid_layout_0 = Qt.QGridLayout()
+        self.instrumentos_layout_0.addLayout(self.instrumentos_grid_layout_0)
+        self.instrumentos.addTab(self.instrumentos_widget_0, 'Diagramas de Ojo')
+        self.instrumentos_widget_1 = Qt.QWidget()
+        self.instrumentos_layout_1 = Qt.QBoxLayout(Qt.QBoxLayout.TopToBottom, self.instrumentos_widget_1)
+        self.instrumentos_grid_layout_1 = Qt.QGridLayout()
+        self.instrumentos_layout_1.addLayout(self.instrumentos_grid_layout_1)
+        self.instrumentos.addTab(self.instrumentos_widget_1, 'Constelacion')
+        self.instrumentos_widget_2 = Qt.QWidget()
+        self.instrumentos_layout_2 = Qt.QBoxLayout(Qt.QBoxLayout.TopToBottom, self.instrumentos_widget_2)
+        self.instrumentos_grid_layout_2 = Qt.QGridLayout()
+        self.instrumentos_layout_2.addLayout(self.instrumentos_grid_layout_2)
+        self.instrumentos.addTab(self.instrumentos_widget_2, 'PSD Spectrum')
+        self.top_grid_layout.addWidget(self.instrumentos, 2, 0, 1, 1)
+        for r in range(2, 3):
             self.top_grid_layout.setRowStretch(r, 1)
-        for c in range(1, 2):
+        for c in range(0, 1):
             self.top_grid_layout.setColumnStretch(c, 1)
-        self._SymbTune_range = Range(0, 1000, 1, 0, 200)
-        self._SymbTune_win = RangeWidget(self._SymbTune_range, self.set_SymbTune, 'SymbTunning', "counter", int)
-        self.controls_grid_layout_1.addWidget(self._SymbTune_win, 0, 0, 1, 1)
+        self._TimingDelay_range = Range(0, Sps-1, 1, 0, 200)
+        self._TimingDelay_win = RangeWidget(self._TimingDelay_range, self.set_TimingDelay, 'Manual Timing', "counter", int)
+        self.controls_grid_layout_1.addWidget(self._TimingDelay_win, 0, 1, 1, 1)
+        for r in range(0, 1):
+            self.controls_grid_layout_1.setRowStretch(r, 1)
+        for c in range(1, 2):
+            self.controls_grid_layout_1.setColumnStretch(c, 1)
+        self._NodB_range = Range(-140., 0., 1., -10, 200)
+        self._NodB_win = RangeWidget(self._NodB_range, self.set_NodB, 'Ch_No (in dB for white noise)', "counter", float)
+        self.canal_grid_layout_1.addWidget(self._NodB_win, 0, 2, 1, 1)
+        for r in range(0, 1):
+            self.canal_grid_layout_1.setRowStretch(r, 1)
+        for c in range(2, 3):
+            self.canal_grid_layout_1.setColumnStretch(c, 1)
+        self._Ch_Frec_offset_range = Range(0, 100, 0.01, 0, 200)
+        self._Ch_Frec_offset_win = RangeWidget(self._Ch_Frec_offset_range, self.set_Ch_Frec_offset, 'Ch_Frec_offset (Hz)', "counter", float)
+        self.canal_grid_layout_1.addWidget(self._Ch_Frec_offset_win, 0, 1, 1, 1)
+        for r in range(0, 1):
+            self.canal_grid_layout_1.setRowStretch(r, 1)
+        for c in range(1, 2):
+            self.canal_grid_layout_1.setColumnStretch(c, 1)
+        self._Ch_Delay_range = Range(0, 1000, 1, 0, 200)
+        self._Ch_Delay_win = RangeWidget(self._Ch_Delay_range, self.set_Ch_Delay, 'Ch_Delay', "counter", int)
+        self.canal_grid_layout_1.addWidget(self._Ch_Delay_win, 0, 3, 1, 1)
+        for r in range(0, 1):
+            self.canal_grid_layout_1.setRowStretch(r, 1)
+        for c in range(3, 4):
+            self.canal_grid_layout_1.setColumnStretch(c, 1)
+        self._Amp_constel1_range = Range(0, 1., 1./100., 0.16, 200)
+        self._Amp_constel1_win = RangeWidget(self._Amp_constel1_range, self.set_Amp_constel1, 'Regule hasta que las constelaciones coincidan en magnitud', "counter", float)
+        self.controls_grid_layout_1.addWidget(self._Amp_constel1_win, 0, 0, 1, 1)
         for r in range(0, 1):
             self.controls_grid_layout_1.setRowStretch(r, 1)
         for c in range(0, 1):
             self.controls_grid_layout_1.setColumnStretch(c, 1)
-        self._Path_Loss_dB_range = Range(-100, 100, 1, 0., 200)
-        self._Path_Loss_dB_win = RangeWidget(self._Path_Loss_dB_range, self.set_Path_Loss_dB, 'Ch_Path_Loss_dB', "counter", float)
-        self.controls_grid_layout_0.addWidget(self._Path_Loss_dB_win, 0, 4, 1, 1)
+        self._tap4_range = Range(0, 1, 0.01, 1, 200)
+        self._tap4_win = RangeWidget(self._tap4_range, self.set_tap4, "tap4", "slider", float)
+        self.canal_grid_layout_0.addWidget(self._tap4_win, 0, 3, 1, 1)
         for r in range(0, 1):
-            self.controls_grid_layout_0.setRowStretch(r, 1)
-        for c in range(4, 5):
-            self.controls_grid_layout_0.setColumnStretch(c, 1)
-        self._NodB_range = Range(-100, 100, 1, -60., 200)
-        self._NodB_win = RangeWidget(self._NodB_range, self.set_NodB, 'Ch Noise dB', "counter", float)
-        self.controls_grid_layout_0.addWidget(self._NodB_win, 0, 3, 1, 1)
-        for r in range(0, 1):
-            self.controls_grid_layout_0.setRowStretch(r, 1)
+            self.canal_grid_layout_0.setRowStretch(r, 1)
         for c in range(3, 4):
-            self.controls_grid_layout_0.setColumnStretch(c, 1)
-        self._F_offset_range = Range(-100, 100, 0.01, 0, 200)
-        self._F_offset_win = RangeWidget(self._F_offset_range, self.set_F_offset, 'Ch_Frec_offset (Hz)', "counter", float)
-        self.controls_grid_layout_0.addWidget(self._F_offset_win, 0, 1, 1, 1)
+            self.canal_grid_layout_0.setColumnStretch(c, 1)
+        self._tap3_range = Range(0.25, 1, 0.01, 1, 200)
+        self._tap3_win = RangeWidget(self._tap3_range, self.set_tap3, "tap3", "slider", float)
+        self.canal_grid_layout_0.addWidget(self._tap3_win, 0, 2, 1, 1)
         for r in range(0, 1):
-            self.controls_grid_layout_0.setRowStretch(r, 1)
-        for c in range(1, 2):
-            self.controls_grid_layout_0.setColumnStretch(c, 1)
-        self._Ajuste_phi_range = Range(-2.*math.pi, 2.*math.pi, 4*math.pi/200., 0., 200)
-        self._Ajuste_phi_win = RangeWidget(self._Ajuste_phi_range, self.set_Ajuste_phi, 'Ch_Desajuste_phi (Rad)', "counter", float)
-        self.controls_grid_layout_0.addWidget(self._Ajuste_phi_win, 0, 2, 1, 1)
-        for r in range(0, 1):
-            self.controls_grid_layout_0.setRowStretch(r, 1)
+            self.canal_grid_layout_0.setRowStretch(r, 1)
         for c in range(2, 3):
-            self.controls_grid_layout_0.setColumnStretch(c, 1)
+            self.canal_grid_layout_0.setColumnStretch(c, 1)
+        self._tap2_range = Range(0, 1, 0.01, 1, 200)
+        self._tap2_win = RangeWidget(self._tap2_range, self.set_tap2, "tap2", "slider", float)
+        self.canal_grid_layout_0.addWidget(self._tap2_win, 0, 1, 1, 1)
+        for r in range(0, 1):
+            self.canal_grid_layout_0.setRowStretch(r, 1)
+        for c in range(1, 2):
+            self.canal_grid_layout_0.setColumnStretch(c, 1)
+        self._tap1_range = Range(0, 1, 0.01, 0.25, 200)
+        self._tap1_win = RangeWidget(self._tap1_range, self.set_tap1, "tap1", "slider", float)
+        self.canal_grid_layout_0.addWidget(self._tap1_win, 0, 0, 1, 1)
+        for r in range(0, 1):
+            self.canal_grid_layout_0.setRowStretch(r, 1)
+        for c in range(0, 1):
+            self.canal_grid_layout_0.setColumnStretch(c, 1)
         _run_stop_check_box = Qt.QCheckBox('Inicial/Parar')
         self._run_stop_choices = {True: True, False: False}
         self._run_stop_choices_inv = dict((v,k) for k,v in self._run_stop_choices.iteritems())
@@ -186,27 +259,27 @@ class Lab_total(gr.top_block, Qt.QWidget):
             self.top_grid_layout.setRowStretch(r, 1)
         for c in range(0, 1):
             self.top_grid_layout.setColumnStretch(c, 1)
-        self.qtgui_const_sink_x_0_2_0_0 = qtgui.const_sink_c(
+        self.qtgui_const_sink_x_0_1_0 = qtgui.const_sink_c(
         	1024, #size
         	'', #name
         	1 #number of inputs
         )
-        self.qtgui_const_sink_x_0_2_0_0.set_update_time(0.10)
-        self.qtgui_const_sink_x_0_2_0_0.set_y_axis(-1.5, 1.5)
-        self.qtgui_const_sink_x_0_2_0_0.set_x_axis(-2.0, 2.0)
-        self.qtgui_const_sink_x_0_2_0_0.set_trigger_mode(qtgui.TRIG_MODE_FREE, qtgui.TRIG_SLOPE_POS, 0.0, 0, "")
-        self.qtgui_const_sink_x_0_2_0_0.enable_autoscale(False)
-        self.qtgui_const_sink_x_0_2_0_0.enable_grid(False)
-        self.qtgui_const_sink_x_0_2_0_0.enable_axis_labels(True)
+        self.qtgui_const_sink_x_0_1_0.set_update_time(0.10)
+        self.qtgui_const_sink_x_0_1_0.set_y_axis(-2, 2)
+        self.qtgui_const_sink_x_0_1_0.set_x_axis(-2, 2)
+        self.qtgui_const_sink_x_0_1_0.set_trigger_mode(qtgui.TRIG_MODE_FREE, qtgui.TRIG_SLOPE_POS, 0.0, 0, "")
+        self.qtgui_const_sink_x_0_1_0.enable_autoscale(False)
+        self.qtgui_const_sink_x_0_1_0.enable_grid(False)
+        self.qtgui_const_sink_x_0_1_0.enable_axis_labels(True)
 
         if not True:
-          self.qtgui_const_sink_x_0_2_0_0.disable_legend()
+          self.qtgui_const_sink_x_0_1_0.disable_legend()
 
-        labels = ["Salida del canal                                                                         ", 'Tx.Modulador-salida', "Salida del canal", '', '',
+        labels = ["Rx.Timing Manual                                                                  ", '', '', 'Filtro RRC y MPSK Timing Recovery', '',
                   '', '', '', '', '']
-        widths = [1, 6, 1, 1, 1,
+        widths = [1, 1, 1, 1, 1,
                   1, 1, 1, 1, 1]
-        colors = ["green", "red", "magenta", "red", "red",
+        colors = ["blue", "black", "red", "blue", "red",
                   "red", "red", "red", "red", "red"]
         styles = [0, 0, 0, 0, 0,
                   0, 0, 0, 0, 0]
@@ -216,42 +289,42 @@ class Lab_total(gr.top_block, Qt.QWidget):
                   1.0, 1.0, 1.0, 1.0, 1.0]
         for i in xrange(1):
             if len(labels[i]) == 0:
-                self.qtgui_const_sink_x_0_2_0_0.set_line_label(i, "Data {0}".format(i))
+                self.qtgui_const_sink_x_0_1_0.set_line_label(i, "Data {0}".format(i))
             else:
-                self.qtgui_const_sink_x_0_2_0_0.set_line_label(i, labels[i])
-            self.qtgui_const_sink_x_0_2_0_0.set_line_width(i, widths[i])
-            self.qtgui_const_sink_x_0_2_0_0.set_line_color(i, colors[i])
-            self.qtgui_const_sink_x_0_2_0_0.set_line_style(i, styles[i])
-            self.qtgui_const_sink_x_0_2_0_0.set_line_marker(i, markers[i])
-            self.qtgui_const_sink_x_0_2_0_0.set_line_alpha(i, alphas[i])
+                self.qtgui_const_sink_x_0_1_0.set_line_label(i, labels[i])
+            self.qtgui_const_sink_x_0_1_0.set_line_width(i, widths[i])
+            self.qtgui_const_sink_x_0_1_0.set_line_color(i, colors[i])
+            self.qtgui_const_sink_x_0_1_0.set_line_style(i, styles[i])
+            self.qtgui_const_sink_x_0_1_0.set_line_marker(i, markers[i])
+            self.qtgui_const_sink_x_0_1_0.set_line_alpha(i, alphas[i])
 
-        self._qtgui_const_sink_x_0_2_0_0_win = sip.wrapinstance(self.qtgui_const_sink_x_0_2_0_0.pyqwidget(), Qt.QWidget)
-        self.canal_grid_layout_0.addWidget(self._qtgui_const_sink_x_0_2_0_0_win, 1, 0, 1, 1)
+        self._qtgui_const_sink_x_0_1_0_win = sip.wrapinstance(self.qtgui_const_sink_x_0_1_0.pyqwidget(), Qt.QWidget)
+        self.instrumentos_grid_layout_1.addWidget(self._qtgui_const_sink_x_0_1_0_win, 1, 0, 1, 1)
         for r in range(1, 2):
-            self.canal_grid_layout_0.setRowStretch(r, 1)
+            self.instrumentos_grid_layout_1.setRowStretch(r, 1)
         for c in range(0, 1):
-            self.canal_grid_layout_0.setColumnStretch(c, 1)
-        self.qtgui_const_sink_x_0_2_0 = qtgui.const_sink_c(
+            self.instrumentos_grid_layout_1.setColumnStretch(c, 1)
+        self.qtgui_const_sink_x_0_1 = qtgui.const_sink_c(
         	1024, #size
         	'', #name
         	1 #number of inputs
         )
-        self.qtgui_const_sink_x_0_2_0.set_update_time(0.10)
-        self.qtgui_const_sink_x_0_2_0.set_y_axis(-1.5, 1.5)
-        self.qtgui_const_sink_x_0_2_0.set_x_axis(-2.0, 2.0)
-        self.qtgui_const_sink_x_0_2_0.set_trigger_mode(qtgui.TRIG_MODE_FREE, qtgui.TRIG_SLOPE_POS, 0.0, 0, "")
-        self.qtgui_const_sink_x_0_2_0.enable_autoscale(False)
-        self.qtgui_const_sink_x_0_2_0.enable_grid(False)
-        self.qtgui_const_sink_x_0_2_0.enable_axis_labels(True)
+        self.qtgui_const_sink_x_0_1.set_update_time(0.10)
+        self.qtgui_const_sink_x_0_1.set_y_axis(-2, 2)
+        self.qtgui_const_sink_x_0_1.set_x_axis(-2, 2)
+        self.qtgui_const_sink_x_0_1.set_trigger_mode(qtgui.TRIG_MODE_FREE, qtgui.TRIG_SLOPE_POS, 0.0, 0, "")
+        self.qtgui_const_sink_x_0_1.enable_autoscale(False)
+        self.qtgui_const_sink_x_0_1.enable_grid(False)
+        self.qtgui_const_sink_x_0_1.enable_axis_labels(True)
 
         if not True:
-          self.qtgui_const_sink_x_0_2_0.disable_legend()
+          self.qtgui_const_sink_x_0_1.disable_legend()
 
-        labels = ["Tx.Modulador-salida                                                             ", 'Tx.Modulador-salida', "Salida del canal", '', '',
+        labels = ["Rx.Timing con Polyphase Clock Sync                          ", 'Rx.b_sampler_cc', '', 'Filtro RRC y MPSK Timing Recovery', '',
                   '', '', '', '', '']
-        widths = [4, 6, 1, 1, 1,
+        widths = [1, 1, 1, 1, 1,
                   1, 1, 1, 1, 1]
-        colors = ["red", "red", "magenta", "red", "red",
+        colors = ["red", "black", "red", "blue", "red",
                   "red", "red", "red", "red", "red"]
         styles = [0, 0, 0, 0, 0,
                   0, 0, 0, 0, 0]
@@ -261,62 +334,107 @@ class Lab_total(gr.top_block, Qt.QWidget):
                   1.0, 1.0, 1.0, 1.0, 1.0]
         for i in xrange(1):
             if len(labels[i]) == 0:
-                self.qtgui_const_sink_x_0_2_0.set_line_label(i, "Data {0}".format(i))
+                self.qtgui_const_sink_x_0_1.set_line_label(i, "Data {0}".format(i))
             else:
-                self.qtgui_const_sink_x_0_2_0.set_line_label(i, labels[i])
-            self.qtgui_const_sink_x_0_2_0.set_line_width(i, widths[i])
-            self.qtgui_const_sink_x_0_2_0.set_line_color(i, colors[i])
-            self.qtgui_const_sink_x_0_2_0.set_line_style(i, styles[i])
-            self.qtgui_const_sink_x_0_2_0.set_line_marker(i, markers[i])
-            self.qtgui_const_sink_x_0_2_0.set_line_alpha(i, alphas[i])
+                self.qtgui_const_sink_x_0_1.set_line_label(i, labels[i])
+            self.qtgui_const_sink_x_0_1.set_line_width(i, widths[i])
+            self.qtgui_const_sink_x_0_1.set_line_color(i, colors[i])
+            self.qtgui_const_sink_x_0_1.set_line_style(i, styles[i])
+            self.qtgui_const_sink_x_0_1.set_line_marker(i, markers[i])
+            self.qtgui_const_sink_x_0_1.set_line_alpha(i, alphas[i])
 
-        self._qtgui_const_sink_x_0_2_0_win = sip.wrapinstance(self.qtgui_const_sink_x_0_2_0.pyqwidget(), Qt.QWidget)
-        self.canal_grid_layout_0.addWidget(self._qtgui_const_sink_x_0_2_0_win, 2, 0, 1, 1)
+        self._qtgui_const_sink_x_0_1_win = sip.wrapinstance(self.qtgui_const_sink_x_0_1.pyqwidget(), Qt.QWidget)
+        self.instrumentos_grid_layout_1.addWidget(self._qtgui_const_sink_x_0_1_win, 2, 0, 1, 1)
         for r in range(2, 3):
-            self.canal_grid_layout_0.setRowStretch(r, 1)
+            self.instrumentos_grid_layout_1.setRowStretch(r, 1)
         for c in range(0, 1):
-            self.canal_grid_layout_0.setColumnStretch(c, 1)
+            self.instrumentos_grid_layout_1.setColumnStretch(c, 1)
+        self.digital_pfb_clock_sync_xxx_0 = digital.pfb_clock_sync_ccf(Sps, 2*math.pi/100.0, (rrc_taps), nfilts, nfilts/2, 1.5, 1)
+        self.digital_constellation_decoder_cb_0_0 = digital.constellation_decoder_cb(MiconstellationObject)
         self.digital_constellation_decoder_cb_0 = digital.constellation_decoder_cb(MiconstellationObject)
         self.digital_chunks_to_symbols_xx_0 = digital.chunks_to_symbols_bc((Constelacion), 1)
-        self.blocks_wavfile_source_0 = blocks.wavfile_source('/home/comdiguis2/MisGitHubs/comdig2.Lab2.4/bush-clinton_debate_waffle.wav', True)
-        self.blocks_unpacked_to_packed_xx_0 = blocks.unpacked_to_packed_bb(Bps, gr.GR_MSB_FIRST)
-        self.blocks_packed_to_unpacked_xx_0 = blocks.packed_to_unpacked_bb(Bps, gr.GR_MSB_FIRST)
-        self.blocks_multiply_const_vxx_0_0_0 = blocks.multiply_const_vff((Vp/(NnivelesQ/2), ))
-        self.blocks_delay_0 = blocks.delay(gr.sizeof_gr_complex*1, SymbTune)
-        self.blocks_char_to_float_0 = blocks.char_to_float(1, 1)
-        self.b_quantizer_fb_0 = b_quantizer_fb(
-            NivelesQ=NnivelesQ,
-            Vmax=Vp,
+        self.channels_channel_model_0 = channels.channel_model(
+        	noise_voltage=math.pow(10.,(NodB)/20.),
+        	frequency_offset=Ch_Frec_offset,
+        	epsilon=jitter_v+1.,
+        	taps=(Ch_taps, ),
+        	noise_seed=13,
+        	block_tags=True
         )
-        self.b_Canal_simple_cc_0 = b_Canal_simple_cc(
-            Ch_Loss_dB=Path_Loss_dB,
-            Ch_NodB=NodB,
-            Ch_Phoffset=Ajuste_phi,
-            Ch_Toffset=0,
-            Fluctuacion=Ch_Fluct_percent,
-            Foffset=F_offset,
-            T_fluct=M*1024,
-            samp_rate=Rs,
+        self.blocks_null_sink_1_0 = blocks.null_sink(gr.sizeof_char*1)
+        self.blocks_null_sink_1 = blocks.null_sink(gr.sizeof_char*1)
+        self.blocks_delay_0_0 = blocks.delay(gr.sizeof_gr_complex*1, Ch_Delay*Sps)
+        self.b_sampler_cc_0 = b_sampler_cc(
+            DelayDiez=TimingDelay,
+            Sps=Sps,
         )
-        self.audio_sink_0 = audio.sink(samp_rate_audio, '', True)
+        self.b_binary_bipolar_source_f_0 = b_binary_bipolar_source_f(
+            Am=Jitter,
+            Spb=int(2*Rs),
+        )
+        self.b_RRaised_cosine_cc_0_0 = b_RRaised_cosine_cc(
+            Ganancia=Amp_constel1,
+            Interpolation=1,
+            ntaps=ntaps,
+            rolloff=rolloff,
+            sps=Sps,
+        )
+        self.b_RRaised_cosine_cc_0 = b_RRaised_cosine_cc(
+            Ganancia=1.,
+            Interpolation=Sps,
+            ntaps=ntaps*Sps,
+            rolloff=rolloff,
+            sps=Sps,
+        )
+        self.b_Eye_Diagram_c_0 = b_Eye_Diagram_c(
+            AlphaLineas=0.5,
+            Delay_i=0,
+            GrosorLineas=20,
+            N_eyes=2,
+            Samprate=Rs,
+            Sps=Sps,
+            Title="b_sampler_cc",
+            Ymax=2,
+            Ymin=-2,
+        )
+        self.instrumentos_grid_layout_0.addWidget(self.b_Eye_Diagram_c_0, 0, 0, 1, 1)
+        for r in range(0, 1):
+            self.instrumentos_grid_layout_0.setRowStretch(r, 1)
+        for c in range(0, 1):
+            self.instrumentos_grid_layout_0.setColumnStretch(c, 1)
+        self.analog_random_source_x_0 = blocks.vector_source_b(map(int, numpy.random.randint(0, M, 1000000)), True)
+        self.analog_agc2_xx_0 = analog.agc2_cc(1e-1, 1e-2, 1.0, 1.0)
+        self.analog_agc2_xx_0.set_max_gain(65536)
+        self._SymbTune_range = Range(0, 1000, 1, 2, 200)
+        self._SymbTune_win = RangeWidget(self._SymbTune_range, self.set_SymbTune, 'SymbTunning', "counter", int)
+        self.controls_grid_layout_1.addWidget(self._SymbTune_win, 0, 2, 1, 1)
+        for r in range(0, 1):
+            self.controls_grid_layout_1.setRowStretch(r, 1)
+        for c in range(2, 3):
+            self.controls_grid_layout_1.setColumnStretch(c, 1)
 
 
 
         ##################################################
         # Connections
         ##################################################
-        self.connect((self.b_Canal_simple_cc_0, 0), (self.blocks_delay_0, 0))
-        self.connect((self.b_Canal_simple_cc_0, 0), (self.qtgui_const_sink_x_0_2_0_0, 0))
-        self.connect((self.b_quantizer_fb_0, 0), (self.blocks_packed_to_unpacked_xx_0, 0))
-        self.connect((self.blocks_char_to_float_0, 0), (self.blocks_multiply_const_vxx_0_0_0, 0))
-        self.connect((self.blocks_delay_0, 0), (self.digital_constellation_decoder_cb_0, 0))
-        self.connect((self.blocks_multiply_const_vxx_0_0_0, 0), (self.audio_sink_0, 0))
-        self.connect((self.blocks_packed_to_unpacked_xx_0, 0), (self.digital_chunks_to_symbols_xx_0, 0))
-        self.connect((self.blocks_unpacked_to_packed_xx_0, 0), (self.blocks_char_to_float_0, 0))
-        self.connect((self.blocks_wavfile_source_0, 0), (self.b_quantizer_fb_0, 0))
-        self.connect((self.digital_chunks_to_symbols_xx_0, 0), (self.b_Canal_simple_cc_0, 0))
-        self.connect((self.digital_chunks_to_symbols_xx_0, 0), (self.qtgui_const_sink_x_0_2_0, 0))
-        self.connect((self.digital_constellation_decoder_cb_0, 0), (self.blocks_unpacked_to_packed_xx_0, 0))
+        self.connect((self.analog_agc2_xx_0, 0), (self.b_RRaised_cosine_cc_0_0, 0))
+        self.connect((self.analog_agc2_xx_0, 0), (self.digital_pfb_clock_sync_xxx_0, 0))
+        self.connect((self.analog_random_source_x_0, 0), (self.digital_chunks_to_symbols_xx_0, 0))
+        self.connect((self.b_RRaised_cosine_cc_0, 0), (self.channels_channel_model_0, 0))
+        self.connect((self.b_RRaised_cosine_cc_0_0, 0), (self.b_Eye_Diagram_c_0, 0))
+        self.connect((self.b_RRaised_cosine_cc_0_0, 0), (self.b_sampler_cc_0, 0))
+        self.connect((self.b_binary_bipolar_source_f_0, 0), (self.probe1, 0))
+        self.connect((self.b_sampler_cc_0, 0), (self.b_Eye_Diagram_c_0, 1))
+        self.connect((self.b_sampler_cc_0, 1), (self.digital_constellation_decoder_cb_0_0, 0))
+        self.connect((self.b_sampler_cc_0, 1), (self.qtgui_const_sink_x_0_1_0, 0))
+        self.connect((self.blocks_delay_0_0, 0), (self.analog_agc2_xx_0, 0))
+        self.connect((self.channels_channel_model_0, 0), (self.blocks_delay_0_0, 0))
+        self.connect((self.digital_chunks_to_symbols_xx_0, 0), (self.b_RRaised_cosine_cc_0, 0))
+        self.connect((self.digital_constellation_decoder_cb_0, 0), (self.blocks_null_sink_1, 0))
+        self.connect((self.digital_constellation_decoder_cb_0_0, 0), (self.blocks_null_sink_1_0, 0))
+        self.connect((self.digital_pfb_clock_sync_xxx_0, 0), (self.digital_constellation_decoder_cb_0, 0))
+        self.connect((self.digital_pfb_clock_sync_xxx_0, 0), (self.qtgui_const_sink_x_0_1, 0))
 
     def closeEvent(self, event):
         self.settings = Qt.QSettings("GNU Radio", "Lab_total")
@@ -336,15 +454,15 @@ class Lab_total(gr.top_block, Qt.QWidget):
 
     def set_samp_rate_audio(self, samp_rate_audio):
         self.samp_rate_audio = samp_rate_audio
-        self.set_Rb(self.NbpS*self.samp_rate_audio)
+        self.set_Rb(self.Nbps*self.samp_rate_audio)
 
-    def get_NbpS(self):
-        return self.NbpS
+    def get_Nbps(self):
+        return self.Nbps
 
-    def set_NbpS(self, NbpS):
-        self.NbpS = NbpS
-        self.set_NnivelesQ(math.pow(2,self.NbpS))
-        self.set_Rb(self.NbpS*self.samp_rate_audio)
+    def set_Nbps(self, Nbps):
+        self.Nbps = Nbps
+        self.set_Rb(self.Nbps*self.samp_rate_audio)
+        self.set_NnivelesQ(math.pow(2,self.Nbps))
 
     def get_M(self):
         return self.M
@@ -352,7 +470,22 @@ class Lab_total(gr.top_block, Qt.QWidget):
     def set_M(self, M):
         self.M = M
         self.set_Bps(int(math.log(self.M,2)))
-        self.b_Canal_simple_cc_0.set_T_fluct(self.M*1024)
+
+    def get_Sps(self):
+        return self.Sps
+
+    def set_Sps(self, Sps):
+        self.Sps = Sps
+        self.set_rrc_taps(firdes.root_raised_cosine(self.nfilts, self.nfilts, 1.0/float(self.Sps), self.rolloff, self.ntaps*self.nfilts))
+        self.set_ntaps(self.Sps*16)
+        self.set_samp_rate(self.Rs*self.Sps)
+        self.blocks_delay_0_0.set_dly(self.Ch_Delay*self.Sps)
+        self.b_sampler_cc_0.set_Sps(self.Sps)
+        self.b_RRaised_cosine_cc_0_0.set_sps(self.Sps)
+        self.b_RRaised_cosine_cc_0.set_Interpolation(self.Sps)
+        self.b_RRaised_cosine_cc_0.set_ntaps(self.ntaps*self.Sps)
+        self.b_RRaised_cosine_cc_0.set_sps(self.Sps)
+        self.b_Eye_Diagram_c_0.set_Sps(self.Sps)
 
     def get_Rb(self):
         return self.Rb
@@ -368,93 +501,65 @@ class Lab_total(gr.top_block, Qt.QWidget):
         self.Bps = Bps
         self.set_Rs(self.Rb/self.Bps)
 
-    def get_Sps(self):
-        return self.Sps
+    def get_rolloff(self):
+        return self.rolloff
 
-    def set_Sps(self, Sps):
-        self.Sps = Sps
-        self.set_samp_rate_d(self.Rs*self.Sps)
+    def set_rolloff(self, rolloff):
+        self.rolloff = rolloff
+        self.set_rrc_taps(firdes.root_raised_cosine(self.nfilts, self.nfilts, 1.0/float(self.Sps), self.rolloff, self.ntaps*self.nfilts))
+        self.b_RRaised_cosine_cc_0_0.set_rolloff(self.rolloff)
+        self.b_RRaised_cosine_cc_0.set_rolloff(self.rolloff)
+
+    def get_ntaps(self):
+        return self.ntaps
+
+    def set_ntaps(self, ntaps):
+        self.ntaps = ntaps
+        self.set_rrc_taps(firdes.root_raised_cosine(self.nfilts, self.nfilts, 1.0/float(self.Sps), self.rolloff, self.ntaps*self.nfilts))
+        self.b_RRaised_cosine_cc_0_0.set_ntaps(self.ntaps)
+        self.b_RRaised_cosine_cc_0.set_ntaps(self.ntaps*self.Sps)
+
+    def get_nfilts(self):
+        return self.nfilts
+
+    def set_nfilts(self, nfilts):
+        self.nfilts = nfilts
+        self.set_rrc_taps(firdes.root_raised_cosine(self.nfilts, self.nfilts, 1.0/float(self.Sps), self.rolloff, self.ntaps*self.nfilts))
 
     def get_Rs(self):
         return self.Rs
 
     def set_Rs(self, Rs):
         self.Rs = Rs
-        self.set_samp_rate_d(self.Rs*self.Sps)
-        self.b_Canal_simple_cc_0.set_samp_rate(self.Rs)
-        self.set_Tmax_scope(16./self.Rs)
+        self.set_samp_rate(self.Rs*self.Sps)
+        self.b_binary_bipolar_source_f_0.set_Spb(int(2*self.Rs))
+        self.b_Eye_Diagram_c_0.set_Samprate(self.Rs)
+        self.set_W(self.Rs/2)
+        self.set_Tmax_scope(64./self.Rs)
 
-    def get_samp_rate_usrp_tx(self):
-        return self.samp_rate_usrp_tx
+    def get_tap4(self):
+        return self.tap4
 
-    def set_samp_rate_usrp_tx(self, samp_rate_usrp_tx):
-        self.samp_rate_usrp_tx = samp_rate_usrp_tx
-        self.set_samp_rate_tx(int(self.samp_rate_usrp_tx/self.Ki))
-        self.set_Ki_d(self.samp_rate_usrp_tx/self.samp_rate_d)
+    def set_tap4(self, tap4):
+        self.tap4 = tap4
 
-    def get_samp_rate_usrp_rx(self):
-        return self.samp_rate_usrp_rx
+    def get_tap3(self):
+        return self.tap3
 
-    def set_samp_rate_usrp_rx(self, samp_rate_usrp_rx):
-        self.samp_rate_usrp_rx = samp_rate_usrp_rx
-        self.set_samp_rate(int(self.samp_rate_usrp_rx/self.Kd))
-        self.set_Kd_d(self.samp_rate_usrp_rx/self.samp_rate_d)
+    def set_tap3(self, tap3):
+        self.tap3 = tap3
 
-    def get_samp_rate_d(self):
-        return self.samp_rate_d
+    def get_tap2(self):
+        return self.tap2
 
-    def set_samp_rate_d(self, samp_rate_d):
-        self.samp_rate_d = samp_rate_d
-        self.set_Ki_d(self.samp_rate_usrp_tx/self.samp_rate_d)
-        self.set_Kd_d(self.samp_rate_usrp_rx/self.samp_rate_d)
+    def set_tap2(self, tap2):
+        self.tap2 = tap2
 
-    def get_Ki_d(self):
-        return self.Ki_d
+    def get_tap1(self):
+        return self.tap1
 
-    def set_Ki_d(self, Ki_d):
-        self.Ki_d = Ki_d
-        self.set_m(math.floor(math.log(self.Ki_d,2)))
-
-    def get_Kd_d(self):
-        return self.Kd_d
-
-    def set_Kd_d(self, Kd_d):
-        self.Kd_d = Kd_d
-        self.set_m1(math.floor(math.log(self.Kd_d,2)))
-
-    def get_m1(self):
-        return self.m1
-
-    def set_m1(self, m1):
-        self.m1 = m1
-        self.set_Kd(math.pow(2,self.m1))
-
-    def get_m(self):
-        return self.m
-
-    def set_m(self, m):
-        self.m = m
-        self.set_Ki(math.pow(2,self.m))
-
-    def get_Ki(self):
-        return self.Ki
-
-    def set_Ki(self, Ki):
-        self.Ki = Ki
-        self.set_samp_rate_tx(int(self.samp_rate_usrp_tx/self.Ki))
-
-    def get_Kd(self):
-        return self.Kd
-
-    def set_Kd(self, Kd):
-        self.Kd = Kd
-        self.set_samp_rate(int(self.samp_rate_usrp_rx/self.Kd))
-
-    def get_samp_rate_tx(self):
-        return self.samp_rate_tx
-
-    def set_samp_rate_tx(self, samp_rate_tx):
-        self.samp_rate_tx = samp_rate_tx
+    def set_tap1(self, tap1):
+        self.tap1 = tap1
 
     def get_samp_rate(self):
         return self.samp_rate
@@ -471,13 +576,31 @@ class Lab_total(gr.top_block, Qt.QWidget):
         if self.run_stop: self.start()
         else: self.stop(); self.wait()
 
+    def get_rrc_taps(self):
+        return self.rrc_taps
+
+    def set_rrc_taps(self, rrc_taps):
+        self.rrc_taps = rrc_taps
+        self.digital_pfb_clock_sync_xxx_0.update_taps((self.rrc_taps))
+
+    def get_jitter_v(self):
+        return self.jitter_v
+
+    def set_jitter_v(self, jitter_v):
+        self.jitter_v = jitter_v
+        self.channels_channel_model_0.set_timing_offset(self.jitter_v+1.)
+
+    def get_W(self):
+        return self.W
+
+    def set_W(self, W):
+        self.W = W
+
     def get_Vp(self):
         return self.Vp
 
     def set_Vp(self, Vp):
         self.Vp = Vp
-        self.blocks_multiply_const_vxx_0_0_0.set_k((self.Vp/(self.NnivelesQ/2), ))
-        self.b_quantizer_fb_0.set_Vmax(self.Vp)
 
     def get_Tmax_scope(self):
         return self.Tmax_scope
@@ -485,34 +608,37 @@ class Lab_total(gr.top_block, Qt.QWidget):
     def set_Tmax_scope(self, Tmax_scope):
         self.Tmax_scope = Tmax_scope
 
+    def get_TimingDelay(self):
+        return self.TimingDelay
+
+    def set_TimingDelay(self, TimingDelay):
+        self.TimingDelay = TimingDelay
+        self.b_sampler_cc_0.set_DelayDiez(self.TimingDelay)
+
     def get_SymbTune(self):
         return self.SymbTune
 
     def set_SymbTune(self, SymbTune):
         self.SymbTune = SymbTune
-        self.blocks_delay_0.set_dly(self.SymbTune)
-
-    def get_Path_Loss_dB(self):
-        return self.Path_Loss_dB
-
-    def set_Path_Loss_dB(self, Path_Loss_dB):
-        self.Path_Loss_dB = Path_Loss_dB
-        self.b_Canal_simple_cc_0.set_Ch_Loss_dB(self.Path_Loss_dB)
 
     def get_NodB(self):
         return self.NodB
 
     def set_NodB(self, NodB):
         self.NodB = NodB
-        self.b_Canal_simple_cc_0.set_Ch_NodB(self.NodB)
+        self.channels_channel_model_0.set_noise_voltage(math.pow(10.,(self.NodB)/20.))
 
     def get_NnivelesQ(self):
         return self.NnivelesQ
 
     def set_NnivelesQ(self, NnivelesQ):
         self.NnivelesQ = NnivelesQ
-        self.blocks_multiply_const_vxx_0_0_0.set_k((self.Vp/(self.NnivelesQ/2), ))
-        self.b_quantizer_fb_0.set_NivelesQ(self.NnivelesQ)
+
+    def get_NbpS(self):
+        return self.NbpS
+
+    def set_NbpS(self, NbpS):
+        self.NbpS = NbpS
 
     def get_MiconstellationObject(self):
         return self.MiconstellationObject
@@ -520,32 +646,52 @@ class Lab_total(gr.top_block, Qt.QWidget):
     def set_MiconstellationObject(self, MiconstellationObject):
         self.MiconstellationObject = MiconstellationObject
 
+    def get_Jitter(self):
+        return self.Jitter
+
+    def set_Jitter(self, Jitter):
+        self.Jitter = Jitter
+        self.b_binary_bipolar_source_f_0.set_Am(self.Jitter)
+
     def get_Fc(self):
         return self.Fc
 
     def set_Fc(self, Fc):
         self.Fc = Fc
 
-    def get_F_offset(self):
-        return self.F_offset
+    def get_Ch_taps(self):
+        return self.Ch_taps
 
-    def set_F_offset(self, F_offset):
-        self.F_offset = F_offset
-        self.b_Canal_simple_cc_0.set_Foffset(self.F_offset)
+    def set_Ch_taps(self, Ch_taps):
+        self.Ch_taps = Ch_taps
+        self.channels_channel_model_0.set_taps((self.Ch_taps, ))
 
-    def get_Ch_Fluct_percent(self):
-        return self.Ch_Fluct_percent
+    def get_Ch_Frec_offset(self):
+        return self.Ch_Frec_offset
 
-    def set_Ch_Fluct_percent(self, Ch_Fluct_percent):
-        self.Ch_Fluct_percent = Ch_Fluct_percent
-        self.b_Canal_simple_cc_0.set_Fluctuacion(self.Ch_Fluct_percent)
+    def set_Ch_Frec_offset(self, Ch_Frec_offset):
+        self.Ch_Frec_offset = Ch_Frec_offset
+        self.channels_channel_model_0.set_frequency_offset(self.Ch_Frec_offset)
 
-    def get_Ajuste_phi(self):
-        return self.Ajuste_phi
+    def get_Ch_Delay(self):
+        return self.Ch_Delay
 
-    def set_Ajuste_phi(self, Ajuste_phi):
-        self.Ajuste_phi = Ajuste_phi
-        self.b_Canal_simple_cc_0.set_Ch_Phoffset(self.Ajuste_phi)
+    def set_Ch_Delay(self, Ch_Delay):
+        self.Ch_Delay = Ch_Delay
+        self.blocks_delay_0_0.set_dly(self.Ch_Delay*self.Sps)
+
+    def get_Amp_constel1(self):
+        return self.Amp_constel1
+
+    def set_Amp_constel1(self, Amp_constel1):
+        self.Amp_constel1 = Amp_constel1
+        self.b_RRaised_cosine_cc_0_0.set_Ganancia(self.Amp_constel1)
+
+    def get_Am(self):
+        return self.Am
+
+    def set_Am(self, Am):
+        self.Am = Am
 
 
 def main(top_block_cls=Lab_total, options=None):

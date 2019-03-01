@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<?grc format='1' created='3.7.9'?>
+<?grc format='1' created='3.7.13'?>
 <flow_graph>
   <timestamp>Wed Jul 20 13:46:01 2016</timestamp>
   <block>
@@ -73,12 +73,20 @@
       <value>run_stop</value>
     </param>
     <param>
+      <key>sizing_mode</key>
+      <value>fixed</value>
+    </param>
+    <param>
       <key>thread_safe_setters</key>
       <value></value>
     </param>
     <param>
       <key>title</key>
       <value></value>
+    </param>
+    <param>
+      <key>placement</key>
+      <value>(0,0)</value>
     </param>
   </block>
   <block>
@@ -495,6 +503,10 @@
     <param>
       <key>const_points</key>
       <value>Constelacion</value>
+    </param>
+    <param>
+      <key>type</key>
+      <value>calcdist</value>
     </param>
     <param>
       <key>dims</key>
@@ -1000,12 +1012,12 @@
       <value>jitter_v</value>
     </param>
     <param>
-      <key>poll_rate</key>
-      <value>100</value>
-    </param>
-    <param>
       <key>value</key>
       <value>1.</value>
+    </param>
+    <param>
+      <key>poll_rate</key>
+      <value>100</value>
     </param>
   </block>
   <block>
@@ -1140,7 +1152,7 @@
     </param>
     <param>
       <key>gui_hint</key>
-      <value>0,0,1,1</value>
+      <value>0,0</value>
     </param>
     <param>
       <key>_rotation</key>
@@ -2312,6 +2324,10 @@
       <value></value>
     </param>
     <param>
+      <key>Delay_i</key>
+      <value>0</value>
+    </param>
+    <param>
       <key>_enabled</key>
       <value>True</value>
     </param>
@@ -3466,7 +3482,7 @@
     </param>
     <param>
       <key>_coordinate</key>
-      <value>(2368, 558)</value>
+      <value>(2360, 532)</value>
     </param>
     <param>
       <key>gui_hint</key>
@@ -3644,11 +3660,11 @@
     </param>
     <param>
       <key>_coordinate</key>
-      <value>(2368, 486)</value>
+      <value>(2360, 356)</value>
     </param>
     <param>
       <key>gui_hint</key>
-      <value>0,1,1,1</value>
+      <value>1,0,1,1</value>
     </param>
     <param>
       <key>_rotation</key>
@@ -4367,11 +4383,11 @@
     </param>
     <param>
       <key>_coordinate</key>
-      <value>(2400, 406)</value>
+      <value>(2360, 428)</value>
     </param>
     <param>
       <key>gui_hint</key>
-      <value>1,1</value>
+      <value>2,0</value>
     </param>
     <param>
       <key>_rotation</key>
@@ -4787,6 +4803,10 @@
       <value>False</value>
     </param>
     <param>
+      <key>axislabels</key>
+      <value>True</value>
+    </param>
+    <param>
       <key>alias</key>
       <value></value>
     </param>
@@ -5128,6 +5148,10 @@
     <param>
       <key>autoscale</key>
       <value>False</value>
+    </param>
+    <param>
+      <key>axislabels</key>
+      <value>True</value>
     </param>
     <param>
       <key>alias</key>
